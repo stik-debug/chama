@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { currentUser, groupInfo, Member } from '../data/mockData';
+import { currentUser, Member } from '../data/mockData';
 
 type Page = 'login' | 'register' | 'dashboard' | 'contributions' | 'loans' | 'meetings' | 'members' | 'rotation' | 'chat' | 'reports' | 'settings' | 'more' | 'fines' | 'voting' | 'contribute' | 'apply-loan' | 'meeting-detail';
 
