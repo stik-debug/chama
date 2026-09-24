@@ -1,5 +1,24 @@
+# Dependencies
 node_modules/
+
+# Build output (uncomment if you want to commit built files)
+# dist/
+# build/
+
+# Logs
+*.log
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 .next/
 dist/
 build/
-*.log

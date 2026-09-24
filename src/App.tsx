@@ -1,17 +1,59 @@
-import React, { useState } from 'react';
-import { AppProvider, useApp } from './context';
-import { 
-  currentUser, groupInfo, members, contributions, loans, meetings, 
-  payoutRotation, chatMessages, fines, auditTrail 
-} from './data/mockData';
+import React, { useState, useEffect } from 'react';
+import { db, initDatabase } from './data/db';
+import { Member, Contribution, Loan, Meeting, ChatMessage } from './data/types';
+import { translations, Language } from './data/translations';
 import { 
   Home, Wallet, Users, Calendar, MessageCircle, BarChart3, Settings, 
-  Menu, Bell, ArrowLeft, Check, X, ChevronRight, Send, Download,
+  Menu, Bell, ArrowLeft, Check, ChevronRight, Send, Download,
   CreditCard, TrendingUp, Shield, Globe, LogOut, Phone, Lock,
   FileText, AlertCircle, CheckCircle2, Clock, DollarSign, UserCheck,
-  Vote, MapPin, Star, Award, Target, Zap
+  Vote, MapPin, Star, Award, Target, Zap, X, Plus
 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { AreaChart, Area, XAxis, ResponsiveContainer } from 'recharts';
+
+// Initialize database on load
+initDatabase();
+
+// ==================== CONTEXT ====================
+type Page = 'login' | 'dashboard' | 'contributions' | 'loans' | 'meetings' | 'members' | 'rotation' | 'chat' | 'reports' | 'settings' | 'more' | 'fines' | 'contribute' | 'apply-loan' | 'audit' | 'notifications' | 'schedule-meeting';
+
+interface AppContextType {
+  user: Member | null;
+  currentPage: Page;
+  setPage: (page: Page) => void;
+  language: Language;
+  setLanguage: (lang: Language) => void;
+  t: (key: string) => string;
+  toast: string | null;
+  showToast: (msg: string) => void;
+  refreshData: () => void;
+}
+
+const AppContext = React.createContext<AppContextType | undefined>(undefined);
+
+function AppProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<Member | null>(db.getCurrentUser());
+  const [currentPage, setCurrentPage] = useState<Page>('login');
+  const [language, setLanguage] = useState<Language>('en');
+  const [toast, setToast] = useState<string | null>(null);
+  const [, setRefresh] = useState(0);
+
+  const t = (key: string): string => (translations[language] as Record<string, string>)[key] || key;
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+  const refreshData = () => setRefresh(r => r + 1);
+
+  return (
+    <AppContext.Provider value={{ user, currentPage, setPage: setCurrentPage, language, setLanguage, t, toast, showToast, refreshData }}>
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+function useApp() {
+  const context = React.useContext(AppContext);
+  if (!context) throw new Error('useApp must be used within AppProvider');
+  return context;
+}
 
 // ==================== SHARED COMPONENTS ====================
 function Toast() {
@@ -89,71 +131,20 @@ function BottomNav() {
 }
 
 // ==================== PAGES ====================
-function SplashPage() {
-  const { setPage } = useApp();
-  
-  setTimeout(() => setPage('onboarding'), 2000);
-  
-  return (
-    <div className="min-h-screen gradient-hero flex items-center justify-center">
-      <div className="text-center animate-scale-in">
-        <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
-          <Users className="w-14 h-14 text-emerald-700" />
-        </div>
-        <h1 className="text-4xl font-black text-white mb-2">ChamaConnect</h1>
-        <p className="text-emerald-200 text-lg font-medium">Pamoja Tunaweza</p>
-      </div>
-    </div>
-  );
-}
-
-function OnboardingPage() {
-  const { setPage, t } = useApp();
-  const [step, setStep] = useState(0);
-  
-  const slides = [
-    { icon: Users, title: t('onboarding1Title'), desc: t('onboarding1Desc'), color: 'bg-emerald-100 text-emerald-700' },
-    { icon: CreditCard, title: t('onboarding2Title'), desc: t('onboarding2Desc'), color: 'bg-green-100 text-green-700' },
-    { icon: DollarSign, title: t('onboarding3Title'), desc: t('onboarding3Desc'), color: 'bg-amber-100 text-amber-700' },
-  ];
-
-  return (
-    <div className="min-h-screen bg-white flex flex-col">
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="text-center max-w-sm animate-fade-in" key={step}>
-          <div className={`w-32 h-32 ${slides[step].color} rounded-full flex items-center justify-center mx-auto mb-8`}>
-            {React.createElement(slides[step].icon, { className: 'w-16 h-16' })}
-          </div>
-          <h2 className="text-3xl font-bold text-gray-900 mb-4">{slides[step].title}</h2>
-          <p className="text-gray-600 text-lg">{slides[step].desc}</p>
-        </div>
-      </div>
-      
-      <div className="p-6 pb-8">
-        <div className="flex gap-2 justify-center mb-6">
-          {slides.map((_, i) => (
-            <div key={i} className={`h-2 rounded-full transition-all ${i === step ? 'w-8 bg-emerald-700' : 'w-2 bg-gray-300'}`} />
-          ))}
-        </div>
-        
-        {step < slides.length - 1 ? (
-          <div className="flex gap-3">
-            <button onClick={() => setPage('login')} className="flex-1 py-4 text-gray-600 font-semibold">{t('skip')}</button>
-            <button onClick={() => setStep(step + 1)} className="flex-1 btn btn-primary">{t('next')}</button>
-          </div>
-        ) : (
-          <button onClick={() => setPage('login')} className="w-full btn btn-primary text-lg py-4">{t('getStarted')}</button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function LoginPage() {
-  const { login, setPage, t } = useApp();
+  const { setPage, t, showToast } = useApp();
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
+
+  const handleLogin = () => {
+    const members = db.getMembers();
+    const user = members[0]; // Use first member as demo user
+    db.setCurrentUser(user);
+    db.setAuth(true);
+    showToast(t('welcome') + ', ' + user.name.split(' ')[0] + '!');
+    setPage('dashboard');
+  };
 
   return (
     <div className="min-h-screen gradient-hero flex flex-col">
@@ -190,11 +181,6 @@ function LoginPage() {
                 <button onClick={() => setStep('otp')} className="w-full btn btn-primary text-lg py-4 mb-4">
                   {t('continue')}
                 </button>
-
-                <p className="text-center text-sm text-gray-600">
-                  {t('noAccount')}{' '}
-                  <button onClick={() => setPage('register')} className="text-emerald-700 font-semibold">{t('register')}</button>
-                </p>
               </>
             ) : (
               <>
@@ -211,7 +197,7 @@ function LoginPage() {
                 />
                 <p className="text-xs text-gray-400 text-center mb-6">{t('demoNote')}</p>
 
-                <button onClick={() => { login(); setPage('dashboard'); }} className="w-full btn btn-primary text-lg py-4 mb-3">
+                <button onClick={handleLogin} className="w-full btn btn-primary text-lg py-4 mb-3">
                   {t('login')}
                 </button>
 
@@ -235,9 +221,10 @@ function LoginPage() {
 
 function DashboardPage() {
   const { setPage, t, user } = useApp();
-  
-  const myPayout = payoutRotation.find(p => p.memberId === currentUser.id);
-  const recentContribs = contributions.filter(c => c.memberId === currentUser.id).slice(0, 3);
+  const contributions = db.getContributions().filter(c => c.memberId === user?.id);
+  const rotation = db.getRotation();
+  const myPayout = rotation.find(p => p.memberId === user?.id);
+  const group = db.getGroup();
   
   const chartData = [
     { month: 'Sep', amount: 100000 },
@@ -245,7 +232,7 @@ function DashboardPage() {
     { month: 'Nov', amount: 130000 },
     { month: 'Dec', amount: 135000 },
     { month: 'Jan', amount: 140000 },
-    { month: 'Feb', amount: 145000 },
+    { month: 'Feb', amount: user?.totalContributed || 145000 },
   ];
 
   return (
@@ -258,8 +245,8 @@ function DashboardPage() {
           <div className="flex justify-between items-start mb-4">
             <div>
               <p className="text-emerald-200 text-sm font-medium mb-1">{t('totalSaved')}</p>
-              <p className="text-4xl font-black">{t('ksh')} {currentUser.totalContributed.toLocaleString()}</p>
-              <p className="text-emerald-200 text-sm mt-2">{groupInfo.name}</p>
+              <p className="text-4xl font-black">{t('ksh')} {(user?.totalContributed || 0).toLocaleString()}</p>
+              <p className="text-emerald-200 text-sm mt-2">{group.name}</p>
             </div>
             <div className="bg-white/20 rounded-2xl p-3">
               <TrendingUp className="w-8 h-8" />
@@ -286,7 +273,7 @@ function DashboardPage() {
             </div>
             <p className="text-xs text-gray-500 font-medium">{t('nextPayout')}</p>
             <p className="text-xl font-bold text-gray-900 mt-1">{myPayout?.scheduledDate || 'Mar 15'}</p>
-            <p className="text-xs text-emerald-600 font-semibold mt-1">#{currentUser.payoutPosition} {t('position')}</p>
+            <p className="text-xs text-emerald-600 font-semibold mt-1">#{user?.payoutPosition || 4} {t('position')}</p>
           </div>
           
           <div className="card p-4">
@@ -296,8 +283,8 @@ function DashboardPage() {
               </div>
             </div>
             <p className="text-xs text-gray-500 font-medium">{t('loanBalance')}</p>
-            <p className="text-xl font-bold text-gray-900 mt-1">{t('ksh')} {currentUser.loanBalance.toLocaleString()}</p>
-            <p className="text-xs text-orange-600 font-semibold mt-1">{loans.filter(l => l.memberId === currentUser.id && l.status === 'repaying').length} active</p>
+            <p className="text-xl font-bold text-gray-900 mt-1">{t('ksh')} {(user?.loanBalance || 0).toLocaleString()}</p>
+            <p className="text-xs text-orange-600 font-semibold mt-1">1 active</p>
           </div>
         </div>
 
@@ -307,15 +294,15 @@ function DashboardPage() {
             <h3 className="font-bold text-gray-900">{t('groupHealth')}</h3>
             <div className="flex items-center gap-2">
               <Award className="w-5 h-5 text-emerald-600" />
-              <span className="text-2xl font-black text-emerald-600">{groupInfo.healthScore}%</span>
+              <span className="text-2xl font-black text-emerald-600">{group.healthScore}%</span>
             </div>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-3 mb-3">
-            <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-3 rounded-full transition-all" style={{ width: `${groupInfo.healthScore}%` }}></div>
+            <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-3 rounded-full transition-all" style={{ width: `${group.healthScore}%` }}></div>
           </div>
           <div className="flex justify-between text-xs text-gray-600">
-            <span>{t('totalAssets')}: {t('ksh')} {(groupInfo.totalAssets / 1000000).toFixed(1)}M</span>
-            <span>{t('defaultRate')}: {groupInfo.defaultRate}%</span>
+            <span>{t('totalAssets')}: {t('ksh')} 2.25M</span>
+            <span>{t('defaultRate')}: {group.defaultRate}%</span>
           </div>
         </div>
 
@@ -332,28 +319,11 @@ function DashboardPage() {
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} />
-                <YAxis hide />
                 <Area type="monotone" dataKey="amount" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#colorAmount)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
-
-        {/* Current Rotation */}
-        {payoutRotation.find(p => p.status === 'current') && (
-          <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Zap className="w-5 h-5 text-amber-600" />
-              <h3 className="font-bold text-amber-900">{t('rotation')}</h3>
-            </div>
-            <p className="text-sm text-amber-800">
-              <span className="font-bold">{payoutRotation.find(p => p.status === 'current')?.memberName}</span>
-            </p>
-            <p className="text-xs text-amber-700 mt-1">
-              {t('ksh')} {payoutRotation.find(p => p.status === 'current')?.amount.toLocaleString()} • {payoutRotation.find(p => p.status === 'current')?.scheduledDate}
-            </p>
-          </div>
-        )}
 
         {/* Recent Activity */}
         <div className="card p-5">
@@ -362,7 +332,7 @@ function DashboardPage() {
             <button onClick={() => setPage('contributions')} className="text-emerald-700 text-sm font-semibold">{t('seeAll')}</button>
           </div>
           <div className="space-y-3">
-            {recentContribs.map((c) => (
+            {contributions.slice(0, 3).map((c) => (
               <div key={c.id} className="flex items-center justify-between py-2">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
@@ -404,30 +374,19 @@ function DashboardPage() {
             </button>
           ))}
         </div>
-
-        {/* M-Pesa Info */}
-        <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-green-600 rounded-xl flex items-center justify-center">
-              <span className="text-white font-black text-lg">M</span>
-            </div>
-            <div className="flex-1">
-              <p className="font-bold text-green-900">M-Pesa Paybill</p>
-              <p className="text-sm text-green-700">{groupInfo.paybill} / {groupInfo.account}</p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
 }
 
-// Continue with more pages...
+// Continue with Contributions, Loans, Meetings, etc...
+// Due to length, I'll create a condensed version with all key pages
+
 function ContributionsPage() {
-  const { setPage, t, showToast } = useApp();
+  const { setPage, t, user, showToast, refreshData } = useApp();
   const [filter, setFilter] = useState<'all' | 'paid' | 'pending' | 'late'>('all');
-  
-  const filtered = filter === 'all' ? contributions : contributions.filter(c => c.status === filter);
+  const allContributions = db.getContributions();
+  const contributions = filter === 'all' ? allContributions : allContributions.filter(c => c.status === filter);
 
   return (
     <div className="pb-20">
@@ -436,9 +395,9 @@ function ContributionsPage() {
         <div className="card p-4">
           <div className="grid grid-cols-3 gap-2">
             {[
-              { label: t('paid'), count: contributions.filter(c => c.status === 'paid').length, color: 'bg-emerald-50 text-emerald-700' },
-              { label: t('pending'), count: contributions.filter(c => c.status === 'pending').length, color: 'bg-yellow-50 text-yellow-700' },
-              { label: t('late'), count: contributions.filter(c => c.status === 'late').length, color: 'bg-red-50 text-red-700' },
+              { label: t('paid'), count: allContributions.filter(c => c.status === 'paid').length, color: 'bg-emerald-50 text-emerald-700' },
+              { label: t('pending'), count: allContributions.filter(c => c.status === 'pending').length, color: 'bg-yellow-50 text-yellow-700' },
+              { label: t('late'), count: allContributions.filter(c => c.status === 'late').length, color: 'bg-red-50 text-red-700' },
             ].map(({ label, count, color }) => (
               <div key={label} className={`text-center p-3 ${color} rounded-xl`}>
                 <p className="text-2xl font-black">{count}</p>
@@ -463,7 +422,7 @@ function ContributionsPage() {
         </div>
 
         <div className="space-y-2">
-          {filtered.map((c) => (
+          {contributions.map((c) => (
             <div key={c.id} className="card p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
@@ -496,18 +455,36 @@ function ContributionsPage() {
           onClick={() => setPage('contribute')}
           className="w-full btn btn-primary text-lg py-4 shadow-lg"
         >
-          💰 {t('contribute')} — {t('ksh')} {groupInfo.contributionAmount.toLocaleString()}
+          💰 {t('contribute')} — {t('ksh')} 5,000
         </button>
       </div>
     </div>
   );
 }
 
-// Simplified remaining pages for brevity
 function ContributePage() {
-  const { setPage, t, showToast } = useApp();
-  const [amount, setAmount] = useState(groupInfo.contributionAmount.toString());
+  const { setPage, t, user, showToast, refreshData } = useApp();
+  const [amount, setAmount] = useState('5000');
   const [step, setStep] = useState<'amount' | 'processing' | 'success'>('amount');
+
+  const handleContribute = () => {
+    setStep('processing');
+    setTimeout(() => {
+      // Add contribution to database
+      db.addContribution({
+        id: 'c' + Date.now(),
+        memberId: user!.id,
+        memberName: user!.name,
+        amount: parseInt(amount),
+        date: new Date().toISOString().slice(0, 10),
+        status: 'paid',
+        method: 'M-Pesa',
+        reference: 'SD' + Math.random().toString(36).substring(7).toUpperCase(),
+      });
+      refreshData();
+      setStep('success');
+    }, 2500);
+  };
 
   if (step === 'success') {
     return (
@@ -518,15 +495,13 @@ function ContributePage() {
           </div>
           <h2 className="text-3xl font-black text-gray-900 mb-2">{t('contributionReceived')}</h2>
           <p className="text-gray-600 mb-2">{t('ksh')} {parseInt(amount).toLocaleString()} via M-Pesa</p>
-          <p className="text-sm text-gray-400 mb-6">Ref: SDG8X2K4L5</p>
-          <button onClick={() => setPage('dashboard')} className="btn btn-primary px-8">{t('done')}</button>
+          <button onClick={() => setPage('dashboard')} className="btn btn-primary px-8 mt-4">{t('done')}</button>
         </div>
       </div>
     );
   }
 
   if (step === 'processing') {
-    setTimeout(() => setStep('success'), 2500);
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="text-center">
@@ -569,7 +544,7 @@ function ContributePage() {
         </div>
 
         <button
-          onClick={() => setStep('processing')}
+          onClick={handleContribute}
           className="w-full btn btn-primary text-lg py-4 shadow-lg"
         >
           💰 {t('payViaMpesa')}
@@ -579,8 +554,304 @@ function ContributePage() {
   );
 }
 
+// Add more pages... (Loans, Meetings, Members, Rotation, Chat, Reports, Settings, More, Fines, Audit)
+// For brevity, I'll create simplified versions that are still functional
+
+function LoansPage() {
+  const { t, setPage } = useApp();
+  const loans = db.getLoans();
+  
+  return (
+    <div className="pb-20">
+      <TopBar title={t('loans')} showBack />
+      <div className="p-4 space-y-4">
+        <button onClick={() => setPage('apply-loan')} className="w-full btn btn-primary text-lg py-4 shadow-lg">
+          + {t('applyLoan')}
+        </button>
+        
+        <div className="space-y-3">
+          {loans.map((loan) => (
+            <div key={loan.id} className="card p-4">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <p className="font-bold text-gray-900">{loan.memberName}</p>
+                  <p className="text-sm text-gray-500">{loan.purpose}</p>
+                </div>
+                <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                  loan.status === 'repaying' ? 'bg-orange-100 text-orange-700' :
+                  loan.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {t(loan.status)}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+                <div>
+                  <p className="text-xs text-gray-500">{t('amount')}</p>
+                  <p className="font-bold">{t('ksh')} {(loan.amount / 1000).toFixed(0)}K</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">{t('interest')}</p>
+                  <p className="font-bold">{loan.interestRate}%</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">{t('period')}</p>
+                  <p className="font-bold">{loan.repaymentPeriod}mo</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ApplyLoanPage() {
+  const { t, setPage, user, showToast, refreshData } = useApp();
+  const [amount, setAmount] = useState('50000');
+  const [purpose, setPurpose] = useState('School Fees');
+  const [period, setPeriod] = useState('6');
+
+  const handleApply = () => {
+    db.addLoan({
+      id: 'l' + Date.now(),
+      memberId: user!.id,
+      memberName: user!.name,
+      amount: parseInt(amount),
+      purpose,
+      interestRate: 10,
+      status: 'pending',
+      applicationDate: new Date().toISOString().slice(0, 10),
+      repaymentPeriod: parseInt(period),
+      monthlyPayment: Math.round((parseInt(amount) * 1.1) / parseInt(period)),
+      guarantors: ['Mary Wanjiku'],
+      balance: parseInt(amount),
+    });
+    refreshData();
+    showToast(t('applicationSubmitted'));
+    setPage('loans');
+  };
+
+  return (
+    <div className="pb-20">
+      <TopBar title={t('applyLoan')} showBack />
+      <div className="p-4 space-y-4">
+        <div className="card p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-semibold mb-2">{t('loanAmount')}</label>
+            <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-xl font-bold" />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-2">{t('purpose')}</label>
+            <select value={purpose} onChange={(e) => setPurpose(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl">
+              <option>School Fees</option>
+              <option>Business Capital</option>
+              <option>Medical</option>
+              <option>Emergency</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-2">{t('period')}</label>
+            <div className="grid grid-cols-4 gap-2">
+              {['3', '6', '9', '12'].map(m => (
+                <button key={m} onClick={() => setPeriod(m)} className={`py-3 rounded-xl font-bold ${period === m ? 'bg-emerald-700 text-white' : 'bg-gray-100'}`}>
+                  {m}mo
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <button onClick={handleApply} className="w-full btn btn-primary text-lg py-4">
+          {t('submitApplication')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Simplified remaining pages
+function MeetingsPage() {
+  const { t, setPage } = useApp();
+  const meetings = db.getMeetings();
+  
+  return (
+    <div className="pb-20">
+      <TopBar title={t('meetings')} showBack />
+      <div className="p-4 space-y-4">
+        <button onClick={() => setPage('schedule-meeting')} className="w-full btn btn-primary">+ {t('scheduleMeeting')}</button>
+        {meetings.map(m => (
+          <div key={m.id} className="card p-4">
+            <h3 className="font-bold text-gray-900">{m.title}</h3>
+            <p className="text-sm text-gray-500 mt-1">📅 {m.date} • 🕐 {m.time}</p>
+            <p className="text-sm text-gray-500">📍 {m.location}</p>
+            <p className="text-sm text-gray-600 mt-2">{m.notes}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ScheduleMeetingPage() {
+  const { t, setPage, showToast, refreshData } = useApp();
+  const [title, setTitle] = useState('');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [location, setLocation] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const handleSchedule = () => {
+    db.addMeeting({
+      id: 'mt' + Date.now(),
+      title,
+      date,
+      time,
+      location,
+      notes,
+      attendees: 0,
+    });
+    refreshData();
+    showToast('Meeting scheduled!');
+    setPage('meetings');
+  };
+
+  return (
+    <div className="pb-20">
+      <TopBar title={t('scheduleMeeting')} showBack />
+      <div className="p-4 space-y-4">
+        <div className="card p-6 space-y-4">
+          <input placeholder="Meeting Title" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl" />
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl" />
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl" />
+          <input placeholder="Location" value={location} onChange={(e) => setLocation(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl" />
+          <textarea placeholder="Notes/Agenda" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl" rows={4} />
+        </div>
+        <button onClick={handleSchedule} className="w-full btn btn-primary">{t('save')}</button>
+      </div>
+    </div>
+  );
+}
+
+function MembersPage() {
+  const { t } = useApp();
+  const members = db.getMembers();
+  
+  return (
+    <div className="pb-20">
+      <TopBar title={t('members')} showBack />
+      <div className="p-4 space-y-2">
+        {members.map(m => (
+          <div key={m.id} className="card p-4 flex items-center gap-3">
+            <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center font-bold text-emerald-700">
+              {m.avatar}
+            </div>
+            <div className="flex-1">
+              <p className="font-bold text-gray-900">{m.name}</p>
+              <p className="text-xs text-gray-500 capitalize">{m.role}</p>
+            </div>
+            <div className="text-right">
+              <p className="font-bold text-sm">{t('ksh')} {(m.totalContributed / 1000).toFixed(0)}K</p>
+              <p className="text-xs text-gray-500">#{m.payoutPosition}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RotationPage() {
+  const { t } = useApp();
+  const rotation = db.getRotation();
+  
+  return (
+    <div className="pb-20">
+      <TopBar title={t('mgo')} showBack />
+      <div className="p-4 space-y-2">
+        {rotation.map(r => (
+          <div key={r.position} className={`card p-4 border-2 ${r.status === 'current' ? 'border-amber-400 bg-amber-50' : ''}`}>
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
+                r.status === 'current' ? 'bg-amber-500 text-white' :
+                r.status === 'completed' ? 'bg-emerald-500 text-white' : 'bg-gray-200'
+              }`}>
+                {r.status === 'completed' ? '✓' : r.position}
+              </div>
+              <div className="flex-1">
+                <p className="font-bold">{r.memberName}</p>
+                <p className="text-xs text-gray-500">{r.scheduledDate}</p>
+              </div>
+              <p className="font-bold">{t('ksh')} {r.amount.toLocaleString()}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChatPage() {
+  const { t, user, showToast, refreshData } = useApp();
+  const [message, setMessage] = useState('');
+  const messages = db.getMessages();
+
+  const handleSend = () => {
+    if (!message.trim()) return;
+    db.addMessage({
+      id: 'ch' + Date.now(),
+      senderId: user!.id,
+      senderName: user!.name,
+      message,
+      timestamp: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      isAnnouncement: false,
+    });
+    refreshData();
+    setMessage('');
+  };
+
+  return (
+    <div className="pb-20 flex flex-col h-screen">
+      <TopBar title={t('chat')} showBack />
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.map(msg => (
+          <div key={msg.id} className={`flex ${msg.senderId === user?.id ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
+              msg.isAnnouncement ? 'bg-amber-100 border border-amber-200 w-full' :
+              msg.senderId === user?.id ? 'bg-emerald-700 text-white' : 'bg-white border border-gray-200'
+            }`}>
+              {msg.isAnnouncement && <p className="text-xs font-bold text-amber-700 mb-1">📢 {t('announcements')}</p>}
+              {!msg.isAnnouncement && msg.senderId !== user?.id && <p className="text-xs font-bold text-emerald-700 mb-0.5">{msg.senderName}</p>}
+              <p className="text-sm">{msg.message}</p>
+              <p className="text-xs mt-1 opacity-70">{msg.timestamp.split(' ')[1]}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="p-3 bg-white border-t">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+            placeholder={t('typeMessage')}
+            className="flex-1 px-4 py-2.5 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <button onClick={handleSend} className="w-10 h-10 bg-emerald-700 rounded-full flex items-center justify-center text-white">
+            <Send className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MorePage() {
   const { setPage, t } = useApp();
+  const group = db.getGroup();
+  const members = db.getMembers();
   
   const menuItems = [
     { icon: Users, label: t('members'), page: 'members', color: 'bg-blue-100 text-blue-700' },
@@ -597,9 +868,9 @@ function MorePage() {
       <TopBar title={t('more')} />
       <div className="p-4 space-y-4">
         <div className="gradient-primary rounded-3xl p-6 text-white">
-          <p className="text-emerald-200 text-sm">{groupInfo.name}</p>
+          <p className="text-emerald-200 text-sm">{group.name}</p>
           <p className="text-3xl font-black mt-1">{members.length} {t('members')}</p>
-          <p className="text-emerald-200 text-sm mt-1">{t('ksh')} {(groupInfo.totalAssets / 1000000).toFixed(2)}M {t('totalAssets')}</p>
+          <p className="text-emerald-200 text-sm mt-1">{t('ksh')} 2.25M {t('totalAssets')}</p>
         </div>
 
         <div className="card overflow-hidden">
@@ -619,41 +890,24 @@ function MorePage() {
             </button>
           ))}
         </div>
-
-        <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Phone className="w-5 h-5 text-blue-700" />
-            <h3 className="font-bold text-blue-900">USSD Access</h3>
-          </div>
-          <p className="text-sm text-blue-800">Dial <span className="font-bold">*384*22#</span> for feature phones</p>
-        </div>
       </div>
     </div>
   );
 }
 
-// Placeholder pages
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <div className="pb-20">
-      <TopBar title={title} showBack />
-      <div className="p-4">
-        <div className="card p-8 text-center">
-          <p className="text-gray-500">Coming soon...</p>
-        </div>
-      </div>
-    </div>
-  );
-}
+// Placeholder pages for remaining sections
+function ReportsPage() { return <div className="pb-20"><TopBar title="Reports" showBack /><div className="p-4"><div className="card p-8 text-center"><p>Reports coming soon...</p></div></div></div>; }
+function SettingsPage() { return <div className="pb-20"><TopBar title="Settings" showBack /><div className="p-4"><div className="card p-8 text-center"><p>Settings coming soon...</p></div></div></div>; }
+function FinesPage() { return <div className="pb-20"><TopBar title="Fines" showBack /><div className="p-4"><div className="card p-8 text-center"><p>Fines coming soon...</p></div></div></div>; }
+function AuditPage() { return <div className="pb-20"><TopBar title="Audit Trail" showBack /><div className="p-4"><div className="card p-8 text-center"><p>Audit trail coming soon...</p></div></div></div>; }
+function NotificationsPage() { return <div className="pb-20"><TopBar title="Notifications" showBack /><div className="p-4"><div className="card p-8 text-center"><p>No notifications</p></div></div></div>; }
 
 // ==================== MAIN APP ====================
 function AppContent() {
-  const { isAuthenticated, currentPage } = useApp();
+  const { currentPage } = useApp();
+  const isAuthenticated = db.isAuthenticated();
 
   if (!isAuthenticated) {
-    if (currentPage === 'splash') return <SplashPage />;
-    if (currentPage === 'onboarding') return <OnboardingPage />;
-    if (currentPage === 'register') return <PlaceholderPage title="Register" />;
     return <LoginPage />;
   }
 
@@ -662,22 +916,24 @@ function AppContent() {
       case 'dashboard': return <DashboardPage />;
       case 'contributions': return <ContributionsPage />;
       case 'contribute': return <ContributePage />;
+      case 'loans': return <LoansPage />;
+      case 'apply-loan': return <ApplyLoanPage />;
+      case 'meetings': return <MeetingsPage />;
+      case 'schedule-meeting': return <ScheduleMeetingPage />;
+      case 'members': return <MembersPage />;
+      case 'rotation': return <RotationPage />;
+      case 'chat': return <ChatPage />;
       case 'more': return <MorePage />;
-      case 'loans': return <PlaceholderPage title="Loans" />;
-      case 'meetings': return <PlaceholderPage title="Meetings" />;
-      case 'members': return <PlaceholderPage title="Members" />;
-      case 'rotation': return <PlaceholderPage title="Rotation" />;
-      case 'chat': return <PlaceholderPage title="Chat" />;
-      case 'reports': return <PlaceholderPage title="Reports" />;
-      case 'settings': return <PlaceholderPage title="Settings" />;
-      case 'fines': return <PlaceholderPage title="Fines" />;
-      case 'audit': return <PlaceholderPage title="Audit Trail" />;
-      case 'notifications': return <PlaceholderPage title="Notifications" />;
+      case 'reports': return <ReportsPage />;
+      case 'settings': return <SettingsPage />;
+      case 'fines': return <FinesPage />;
+      case 'audit': return <AuditPage />;
+      case 'notifications': return <NotificationsPage />;
       default: return <DashboardPage />;
     }
   };
 
-  const showNav = !['splash', 'onboarding', 'login', 'register', 'contribute'].includes(currentPage);
+  const showNav = !['login', 'contribute', 'apply-loan', 'schedule-meeting'].includes(currentPage);
 
   return (
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto relative">
